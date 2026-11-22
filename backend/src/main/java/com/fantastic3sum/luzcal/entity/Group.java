@@ -16,7 +16,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity 
-@Table(name = "groups")
+@Table(name = "luzcal_groups")
 @Getter 
 @Setter 
 public class Group {

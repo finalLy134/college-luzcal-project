@@ -38,6 +38,9 @@ public class User {
     @Column(nullable = true)
     private String passwordHash;
 
+    @Column(nullable = true)
+    private String googleId;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

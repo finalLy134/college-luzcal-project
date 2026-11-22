@@ -1,22 +1,26 @@
 
 package com.fantastic3sum.luzcal.config;
 
-import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 
 @Configuration
 public class SecurityConfig {
@@ -26,29 +30,43 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration configuration
-    ) throws Exception {
-        return configuration.getAuthenticationManager();
-    }
-
+    // Stores authentication in the HTTP session
     @Bean
     public SecurityContextRepository securityContextRepository() {
         return new HttpSessionSecurityContextRepository();
     }
 
+    // Stores CSRF tokens in the session
+    @Bean
+    public CsrfTokenRepository csrfTokenRepository() {
+        return new HttpSessionCsrfTokenRepository();
+    }
+
+    // Security protections for manual login
+    @Bean
+    public SessionAuthenticationStrategy sessionAuthenticationStrategy(
+            CsrfTokenRepository csrfTokenRepository
+    ) {
+        return new CompositeSessionAuthenticationStrategy(
+            List.of(
+                new ChangeSessionIdAuthenticationStrategy(),
+                new CsrfAuthenticationStrategy(csrfTokenRepository)
+            )
+        );
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            SecurityContextRepository securityContextRepository
+            SecurityContextRepository securityContextRepository,
+            CsrfTokenRepository csrfTokenRepository
     ) throws Exception {
 
         http
-            // Session-based authentication requires CSRF protection
-            .csrf(Customizer.withDefaults())
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(csrfTokenRepository)
+            )
 
-            // Save authenticated users in their HTTP session
             .securityContext(context -> context
                 .securityContextRepository(securityContextRepository)
             )
@@ -58,49 +76,40 @@ public class SecurityConfig {
             )
 
             .authorizeHttpRequests(auth -> auth
-
-                // Public authentication endpoints
                 .requestMatchers(
                     HttpMethod.POST,
                     "/api/auth/register",
                     "/api/auth/login"
                 ).permitAll()
 
-                // Public GET endpoints
                 .requestMatchers(
                     HttpMethod.GET,
                     "/api/auth/csrf",
                     "/api/users/availability"
                 ).permitAll()
 
-                // Google OAuth2 endpoints
                 .requestMatchers(
                     "/oauth2/authorization/**",
                     "/login/oauth2/code/**"
                 ).permitAll()
 
-                // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
 
-            // Disable default login form and HTTP Basic
+            // We handle username/password login ourselves
             .formLogin(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
 
-            // Google OAuth2 login
+            // Google handles its own OAuth2 login flow
             .oauth2Login(Customizer.withDefaults())
 
-            // Return 401 for unauthenticated REST requests
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(
                     (request, response, exception) ->
-                        response.sendError(
-                            HttpServletResponse.SC_UNAUTHORIZED
-                        )
+                        response.sendError(401)
                 )
             )
 
-            // Session logout
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
                 .invalidateHttpSession(true)
@@ -108,9 +117,7 @@ public class SecurityConfig {
                 .deleteCookies("JSESSIONID")
                 .logoutSuccessHandler(
                     (request, response, authentication) ->
-                        response.setStatus(
-                            HttpServletResponse.SC_NO_CONTENT
-                        )
+                        response.setStatus(204)
                 )
             );
 
