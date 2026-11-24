@@ -92,7 +92,7 @@ public class SecurityConfig {
                     "/oauth2/authorization/**",
                     "/login/oauth2/code/**"
                 ).permitAll()
-
+                
                 .anyRequest().authenticated()
             )
 
